@@ -1,0 +1,14 @@
+# fpk builds
+*.fpk
+app.tgz
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS
+.DS_Store
+
+# Temp
+*.bak

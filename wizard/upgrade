@@ -1,0 +1,63 @@
+[
+    {
+        "stepTitle": "升级 Hermes AI Agent",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "即将升级 Hermes AI Agent。升级过程中会保留所有应用数据和配置。"
+            },
+            {
+                "type": "tips",
+                "helpText": "请根据您的网络环境选择合适的下载源。如果您的 NAS 能正常访问 GitHub，选择「直连」即可。"
+            },
+            {
+                "type": "select",
+                "field": "wizard_pip_mirror",
+                "label": "pip 镜像源（下载 Python 包）",
+                "initValue": "aliyun",
+                "options": [
+                    { "label": "阿里云 (mirrors.aliyun.com) ★ 推荐", "value": "aliyun" },
+                    { "label": "清华 TUNA (tuna.tsinghua.edu.cn)", "value": "tsinghua" },
+                    { "label": "中科大 USTC (mirrors.ustc.edu.cn)", "value": "ustc" },
+                    { "label": "华为云 (huaweicloud.com)", "value": "huawei" },
+                    { "label": "腾讯云 (tencent.com)", "value": "tencent" },
+                    { "label": "上海交大 (sjtug.sjtu.edu.cn)", "value": "sjtug" },
+                    { "label": "直连 PyPI 官方", "value": "official" },
+                    { "label": "自定义", "value": "custom" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_pip_mirror_custom",
+                "label": "自定义 pip 镜像地址",
+                "initValue": "",
+                "rules": [
+                    { "required": false, "message": "请输入有效的 pip 镜像 URL" }
+                ]
+            },
+            {
+                "type": "select",
+                "field": "wizard_github_proxy",
+                "label": "GitHub 代理（下载 WebUI 源码）",
+                "initValue": "ghproxy",
+                "options": [
+                    { "label": "ghproxy.com ★ 推荐", "value": "ghproxy" },
+                    { "label": "gh.api.coderkeeper.com", "value": "coderkeeper" },
+                    { "label": "gitclone.com", "value": "gitclone" },
+                    { "label": "gh.ddlc.top", "value": "ddlc" },
+                    { "label": "直连 GitHub", "value": "direct" },
+                    { "label": "自定义", "value": "custom" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_github_proxy_custom",
+                "label": "自定义 GitHub 代理地址",
+                "initValue": "",
+                "rules": [
+                    { "required": false, "message": "请输入有效的代理 URL" }
+                ]
+            }
+        ]
+    }
+]

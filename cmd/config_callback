@@ -1,0 +1,30 @@
+#!/bin/bash
+# Hermes AI Agent - 配置变更后
+# 用户在应用设置页面修改配置后触发
+# 将 wizard 配置写入 env.conf
+
+ETC_DIR="${TRIM_PKGETC}"
+LOG_FILE="${TRIM_PKGVAR}/config.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "===== 配置变更 ====="
+
+mkdir -p "${ETC_DIR}"
+
+cat > "${ETC_DIR}/env.conf" << EOF
+# Hermes 网络配置
+# 由应用设置生成
+
+PIP_MIRROR="${wizard_pip_mirror:-aliyun}"
+PIP_MIRROR_CUSTOM="${wizard_pip_mirror_custom}"
+GITHUB_PROXY="${wizard_github_proxy:-ghproxy}"
+GITHUB_PROXY_CUSTOM="${wizard_github_proxy_custom}"
+EOF
+
+log_msg "配置已更新"
+log_msg "注意：端口由 manifest 的 service_port 统一管理，fnOS 自动检测可用性"
+log_msg "配置变更完成"
+exit 0

@@ -1,0 +1,11 @@
+{
+    ".url": {
+        "com.nousresearch.hermes.Application": {
+            "title": "Hermes AI Agent",
+            "icon": "images/icon_{0}.png",
+            "type": "window",
+            "protocol": "http",
+            "port": "8787"
+        }
+    }
+}

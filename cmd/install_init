@@ -1,0 +1,36 @@
+#!/bin/bash
+# Hermes AI Agent - 安装前检查
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# 检查 python312 是否可用
+PYTHON312="/var/apps/python312/target/bin/python3"
+if [ ! -f "${PYTHON312}" ]; then
+    echo "错误: Python 3.12 运行时未安装。请确保已安装 python312 依赖。" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+fi
+
+# 检查 Python 版本
+PYTHON_VER=$("${PYTHON312}" --version 2>&1)
+log_msg "Python 版本: ${PYTHON_VER}"
+
+# 检查磁盘空间（需要至少 500MB）
+if command -v df &>/dev/null; then
+    AVAILABLE_KB=$(df -k "${TRIM_PKGVAR}" 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -n "${AVAILABLE_KB}" ] && [ "${AVAILABLE_KB}" -lt 512000 ]; then
+        echo "错误: 磁盘空间不足。Hermes 至少需要 500MB 可用空间。" > "${TRIM_TEMP_LOGFILE}"
+        exit 1
+    fi
+    log_msg "磁盘空间: $((AVAILABLE_KB / 1024))MB 可用"
+fi
+
+# 检查 curl 可用
+if ! command -v curl &>/dev/null; then
+    echo "错误: curl 未安装，Hermes 安装需要 curl 下载依赖。" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+fi
+
+log_msg "环境检查通过"
+exit 0

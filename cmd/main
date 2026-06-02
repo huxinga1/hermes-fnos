@@ -1,0 +1,247 @@
+#!/bin/bash
+# Hermes AI Agent - Process Management
+# 管理 Hermes WebUI 服务的启动、停止和状态检查
+# 端口由 manifest service_port 统一管理，fnOS 自动检测可用性并设置防火墙
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+
+# ============================================================================
+# 加载配置（env.conf），支持自定义数据目录
+# ============================================================================
+if [ -f "${TRIM_PKGETC}/env.conf" ]; then
+    . "${TRIM_PKGETC}/env.conf"
+fi
+
+if [ -n "${CUSTOM_DATA_DIR}" ]; then
+    VENV_PYTHON="${CUSTOM_DATA_DIR}/venv/bin/python3"
+    WEBUI_DIR="${CUSTOM_DATA_DIR}/hermes-webui"
+    WORKSPACE_DIR="${CUSTOM_DATA_DIR}/workspace"
+else
+    VENV_PYTHON="${TRIM_PKGVAR}/venv/bin/python3"
+    WEBUI_DIR="${TRIM_PKGVAR}/hermes-webui"
+    WORKSPACE_DIR="${TRIM_PKGVAR}/workspace"
+fi
+
+SERVER_SCRIPT="${WEBUI_DIR}/server.py"
+HERMES_HOME="${TRIM_PKGVAR}"
+SERVICE_PORT="${TRIM_SERVICE_PORT:-8787}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+# 启动前诊断：验证 venv 和关键模块
+diagnose_env() {
+    log_msg "=== 启动前诊断 ==="
+
+    # 环境变量
+    log_msg "TRIM_PKGVAR=${TRIM_PKGVAR}"
+    log_msg "TRIM_SERVICE_PORT=${TRIM_SERVICE_PORT}"
+    log_msg "TRIM_PKGETC=${TRIM_PKGETC}"
+    log_msg "TRIM_USERNAME=${TRIM_USERNAME}"
+    log_msg "VENV_PYTHON=${VENV_PYTHON}"
+    log_msg "WEBUI_DIR=${WEBUI_DIR}"
+    log_msg "USER=$(whoami 2>/dev/null || echo unknown)"
+
+    # 检查 venv python 可执行
+    if [ ! -f "${VENV_PYTHON}" ]; then
+        log_msg "ERROR: venv python not found at ${VENV_PYTHON}"
+        return 1
+    fi
+    log_msg "venv python: $("${VENV_PYTHON}" --version 2>&1)"
+    log_msg "venv pip: $("${VENV_PYTHON}" -m pip --version 2>&1)"
+
+    # 检查关键模块
+    for module in yaml cryptography; do
+        if "${VENV_PYTHON}" -c "import ${module}" 2>/dev/null; then
+            log_msg "module '${module}' OK"
+        else
+            log_msg "WARNING: module '${module}' not found (may affect some features)"
+        fi
+    done
+
+    # 检查 hermes-agent (核心模块)
+    if "${VENV_PYTHON}" -c "import agent" 2>/dev/null; then
+        log_msg "module 'agent' OK"
+    else
+        log_msg "ERROR: module 'agent' (hermes-agent) not found!"
+        return 1
+    fi
+
+    # 检查 WebUI 目录结构
+    if [ -f "${SERVER_SCRIPT}" ]; then
+        log_msg "server.py OK"
+    else
+        log_msg "ERROR: server.py not found!"
+        return 1
+    fi
+
+    # 检查 WebUI API 导入
+    if "${VENV_PYTHON}" -c "import sys; sys.path.insert(0, '${WEBUI_DIR}'); from api.config import HOST, PORT; print(f'API OK: HOST={HOST} PORT={PORT}')" 2>&1; then
+        log_msg "API import OK"
+    else
+        log_msg "WARNING: API import test failed (may still work at runtime)"
+    fi
+
+    # 检查目录写权限
+    if touch "${TRIM_PKGVAR}/.write_test" 2>/dev/null; then
+        rm -f "${TRIM_PKGVAR}/.write_test"
+        log_msg "data dir writable: OK"
+    else
+        log_msg "ERROR: data dir not writable!"
+        return 1
+    fi
+
+    if touch "${LOG_FILE}" 2>/dev/null; then
+        log_msg "log file writable: OK"
+    else
+        log_msg "ERROR: log file not writable!"
+        return 1
+    fi
+
+    log_msg "=== 诊断完成 ==="
+    return 0
+}
+
+start_process() {
+    if status; then
+        log_msg "Hermes WebUI is already running"
+        return 0
+    fi
+
+    # 运行诊断
+    if ! diagnose_env; then
+        echo "启动诊断失败，请查看日志: ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE}"
+        return 1
+    fi
+
+    log_msg "Starting Hermes WebUI on port ${SERVICE_PORT} ..."
+
+    # 设置环境变量（WebUI 使用 HERMES_WEBUI_HOST / HERMES_WEBUI_PORT）
+    export HERMES_HOME="${TRIM_PKGVAR}"
+    export PATH="$(dirname "${VENV_PYTHON}"):$PATH"
+    export PYTHONUNBUFFERED=1
+    export HERMES_WEBUI_HOST="0.0.0.0"
+    export HERMES_WEBUI_PORT="${SERVICE_PORT}"
+    export HERMES_WEBUI_DEFAULT_WORKSPACE="${WORKSPACE_DIR}"
+    export HERMES_WEBUI_STATE_DIR="${TRIM_PKGVAR}/webui"
+
+    # 确保 state 目录已创建且可写
+    mkdir -p "${TRIM_PKGVAR}/webui/sessions"
+
+    # 启动服务
+    cd "${WEBUI_DIR}"
+    nohup "${VENV_PYTHON}" "${SERVER_SCRIPT}" \
+        >> "${LOG_FILE}" 2>&1 &
+
+    local pid=$!
+    printf "%s" "${pid}" > "${PID_FILE}"
+    log_msg "Started with PID: ${pid} on 0.0.0.0:${SERVICE_PORT}"
+
+    # 等一秒看看进程是否还活着
+    sleep 1
+    if check_process "${pid}"; then
+        log_msg "Process verified running after 1s"
+        return 0
+    else
+        log_msg "ERROR: Process exited immediately! Check ${LOG_FILE} for details"
+        # 检查日志末尾
+        local last_lines
+        last_lines=$(tail -20 "${LOG_FILE}" 2>/dev/null)
+        log_msg "Last log lines: ${last_lines}"
+        echo "服务启动后立即退出，请查看日志: ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE}"
+        rm -f "${PID_FILE}"
+        return 1
+    fi
+}
+
+stop_process() {
+    log_msg "Stopping Hermes WebUI ..."
+
+    if [ -r "${PID_FILE}" ]; then
+        local pid
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+
+        if check_process "${pid}"; then
+            log_msg "Sending TERM signal to PID: ${pid} ..."
+            kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1
+
+            local count=0
+            while check_process "${pid}" && [ "${count}" -lt 10 ]; do
+                sleep 1
+                count=$((count + 1))
+                log_msg "Waiting for graceful shutdown... (${count}s/10s)"
+            done
+
+            if check_process "${pid}"; then
+                log_msg "Sending KILL signal to PID: ${pid} ..."
+                kill -KILL "${pid}" >> "${LOG_FILE}" 2>&1
+                sleep 1
+            fi
+        fi
+        rm -f "${PID_FILE}"
+        log_msg "Process stopped"
+    fi
+
+    # 也尝试清理所有 hermes 相关进程
+    pkill -f "hermes-webui/server.py" 2>/dev/null || true
+    return 0
+}
+
+check_process() {
+    local pid=$1
+    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        fi
+        # PID 文件存在但进程不存在，清理
+        rm -f "${PID_FILE}"
+    fi
+    return 1
+}
+
+case $1 in
+start)
+    start_process
+    ;;
+stop)
+    stop_process
+    ;;
+status)
+    if status; then
+        log_msg "Status: running"
+        exit 0
+    else
+        log_msg "Status: not running"
+        exit 3
+    fi
+    ;;
+restart)
+    stop_process
+    sleep 1
+    start_process
+    ;;
+log)
+    local lines="${2:-100}"
+    if [ -f "${LOG_FILE}" ]; then
+        tail -n "${lines}" "${LOG_FILE}"
+    else
+        echo "日志文件不存在: ${LOG_FILE}"
+        exit 1
+    fi
+    ;;
+*)
+    echo "Usage: $0 {start|stop|status|restart|log}"
+    exit 1
+    ;;
+esac

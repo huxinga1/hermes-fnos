@@ -1,0 +1,26 @@
+#!/bin/bash
+# Hermes AI Agent - 升级后处理
+# 恢复配置，数据迁移
+
+LOG_FILE="${TRIM_PKGVAR}/upgrade.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "===== 升级后处理 ====="
+
+# 恢复配置文件
+if [ -f "${TRIM_PKGVAR}/env.conf.bak" ] && [ ! -f "${TRIM_PKGETC}/env.conf" ]; then
+    cp "${TRIM_PKGVAR}/env.conf.bak" "${TRIM_PKGETC}/env.conf"
+    log_msg "配置文件已恢复"
+fi
+
+# 修复数据目录所有权
+if command -v chown &>/dev/null; then
+    chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${TRIM_PKGVAR}" 2>/dev/null || true
+fi
+
+log_msg "升级完成"
+log_msg "请前往应用中心启动 Hermes AI Agent"
+exit 0

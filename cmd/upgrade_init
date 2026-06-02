@@ -1,0 +1,33 @@
+#!/bin/bash
+# Hermes AI Agent - 升级前准备
+# 备份关键配置和数据
+
+LOG_FILE="${TRIM_PKGVAR}/upgrade.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "===== 升级前准备 ====="
+log_msg "旧版本: ${TRIM_OLD_APPVER}"
+log_msg "新版本: ${TRIM_APPVER}"
+
+# 停止正在运行的服务
+if [ -f "${TRIM_PKGVAR}/app.pid" ]; then
+    PID=$(head -n 1 "${TRIM_PKGVAR}/app.pid" | tr -d '[:space:]')
+    if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
+        log_msg "停止运行中的服务..."
+        kill -TERM "${PID}" 2>/dev/null
+        sleep 3
+        kill -0 "${PID}" 2>/dev/null && kill -KILL "${PID}" 2>/dev/null || true
+    fi
+fi
+
+# 备份配置文件
+if [ -f "${TRIM_PKGETC}/env.conf" ]; then
+    cp "${TRIM_PKGETC}/env.conf" "${TRIM_PKGVAR}/env.conf.bak"
+    log_msg "配置文件已备份"
+fi
+
+log_msg "升级准备完成"
+exit 0

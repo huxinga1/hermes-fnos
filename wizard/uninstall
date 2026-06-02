@@ -1,0 +1,38 @@
+[
+    {
+        "stepTitle": "卸载 Hermes AI Agent",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "即将卸载 Hermes AI Agent，请确认是否保留应用数据。"
+            },
+            {
+                "type": "tips",
+                "helpText": "• <b>应用文件</b>: 将被彻底删除<br/>• <b>运行时数据</b>: 默认删除（含 venv、WebUI 等）"
+            },
+            {
+                "type": "switch",
+                "field": "wizard_keep_data",
+                "label": "保留应用数据",
+                "initValue": "true",
+                "helpText": "如果勾选，将保留应用数据（venv、WebUI、配置等），下次重装即可直接使用，无需重新下载。"
+            },
+            {
+                "type": "tips",
+                "helpText": "<strong style='color: red;'>警告：如果不勾选保留数据，所有应用数据都将丢失且不可恢复！</strong>"
+            },
+            {
+                "type": "switch",
+                "field": "wizard_confirm_uninstall",
+                "label": "我已了解风险，确认卸载",
+                "initValue": "false",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请确认卸载操作"
+                    }
+                ]
+            }
+        ]
+    }
+]

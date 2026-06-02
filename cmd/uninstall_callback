@@ -1,0 +1,52 @@
+#!/bin/bash
+# Hermes AI Agent - 卸载后清理
+# 根据 wizard/uninstall 中用户的选择执行数据清除或保留
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "===== 卸载后清理 ====="
+
+# wizard/uninstall 传递的变量，默认保留数据
+KEEP_DATA="${wizard_keep_data:-true}"
+log_msg "用户选择保留数据: ${KEEP_DATA}"
+
+# 检查是否有自定义数据目录
+CUSTOM_DATA_DIR=""
+CUSTOM_DATA_CONF="${TRIM_PKGETC}/custom_data_dir.conf"
+if [ -f "${CUSTOM_DATA_CONF}" ]; then
+    CUSTOM_DATA_DIR=$(cat "${CUSTOM_DATA_CONF}")
+    log_msg "检测到自定义数据目录: ${CUSTOM_DATA_DIR}"
+fi
+
+if [ "${KEEP_DATA}" = "false" ]; then
+    log_msg "执行数据清理..."
+
+    # 删除自定义数据目录（如果存在）
+    if [ -n "${CUSTOM_DATA_DIR}" ] && [ -d "${CUSTOM_DATA_DIR}" ]; then
+        rm -rf "${CUSTOM_DATA_DIR}"
+        log_msg "  ✓ 自定义数据目录已删除: ${CUSTOM_DATA_DIR}"
+    fi
+
+    # 删除应用数据目录下所有内容
+    if [ -d "${TRIM_PKGVAR}" ]; then
+        rm -rf "${TRIM_PKGVAR}"/*
+        log_msg "  ✓ ${TRIM_PKGVAR} 已清空"
+    fi
+
+    # 删除配置文件
+    if [ -d "${TRIM_PKGETC}" ]; then
+        rm -rf "${TRIM_PKGETC}"/*
+        log_msg "  ✓ ${TRIM_PKGETC} 已清空"
+    fi
+
+    log_msg "数据清理完成"
+else
+    log_msg "保留所有数据（按用户选择）"
+fi
+
+log_msg "===== 卸载完成 ====="
+exit 0

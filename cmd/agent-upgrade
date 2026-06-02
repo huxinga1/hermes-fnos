@@ -1,0 +1,93 @@
+#!/bin/bash
+# Hermes Agent - pip 升级脚本
+# 用于通过 WebUI 或命令行升级 hermes-agent 到最新版
+
+LOG_FILE="${TRIM_PKGVAR}/upgrade-agent.log"
+
+# 检查自定义数据目录
+if [ -f "${TRIM_PKGETC}/env.conf" ]; then
+    . "${TRIM_PKGETC}/env.conf"
+fi
+if [ -n "${CUSTOM_DATA_DIR}" ]; then
+    VENV_PYTHON="${CUSTOM_DATA_DIR}/venv/bin/python3"
+else
+    VENV_PYTHON="${TRIM_PKGVAR}/venv/bin/python3"
+fi
+
+# pip 镜像链
+PIP_MIRRORS=(
+    "https://mirrors.aliyun.com/pypi/simple/"
+    "https://pypi.tuna.tsinghua.edu.cn/simple/"
+    "https://mirrors.ustc.edu.cn/pypi/web/simple/"
+    "https://repo.huaweicloud.com/repository/pypi/simple/"
+    "https://mirrors.cloud.tencent.com/pypi/simple/"
+    "https://pypi.mirrors.sjtug.sjtu.edu.cn/simple/"
+    "https://pypi.org/simple/"
+)
+PIP_MIRROR_NAMES=("阿里云" "清华TUNA" "中科大USTC" "华为云" "腾讯云" "上海交大" "PyPI官方")
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 错误: $1" | tee -a "${LOG_FILE}"
+    exit 1
+}
+
+do_upgrade() {
+    log_msg "===== Hermes Agent 升级 ====="
+
+    if [ ! -f "${VENV_PYTHON}" ]; then
+        error_exit "虚拟环境不存在，请先安装应用"
+    fi
+
+    local current_version
+    current_version=$("${VENV_PYTHON}" -m pip show hermes-agent 2>/dev/null | grep "^Version:" | awk '{print $2}')
+    log_msg "当前版本: ${current_version:-unknown}"
+
+    log_msg "正在升级 hermes-agent..."
+
+    local upgrade_ok=1
+    for i in "${!PIP_MIRRORS[@]}"; do
+        local mirror="${PIP_MIRRORS[$i]}"
+        local name="${PIP_MIRROR_NAMES[$i]}"
+
+        log_msg "  尝试镜像 [${name}]: ${mirror}"
+        "${VENV_PYTHON}" -m pip install --upgrade hermes-agent \
+            -i "${mirror}" \
+            --trusted-host "$(echo "${mirror}" | awk -F'/' '{print $3}')" \
+            --timeout 120 2>&1 | tee -a "${LOG_FILE}"
+
+        if [ $? -eq 0 ]; then
+            log_msg "  ✓ ${name} 升级成功"
+            upgrade_ok=0
+            break
+        fi
+        log_msg "  ✗ ${name} 失败"
+    done
+
+    if [ "${upgrade_ok}" -ne 0 ]; then
+        error_exit "所有镜像源均无法升级 hermes-agent"
+    fi
+
+    local new_version
+    new_version=$("${VENV_PYTHON}" -m pip show hermes-agent 2>/dev/null | grep "^Version:" | awk '{print $2}')
+    log_msg "升级后版本: ${new_version:-unknown}"
+
+    log_msg "===== Hermes Agent 升级完成 ====="
+    return 0
+}
+
+case "${1:-}" in
+    upgrade|"")
+        do_upgrade
+        ;;
+    version)
+        "${VENV_PYTHON}" -m pip show hermes-agent 2>/dev/null || echo "not installed"
+        ;;
+    *)
+        echo "Usage: $0 {upgrade|version}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,55 @@
+[
+    {
+        "stepTitle": "网络配置",
+        "items": [
+            {
+                "type": "select",
+                "field": "wizard_pip_mirror",
+                "label": "pip 镜像源",
+                "initValue": "aliyun",
+                "options": [
+                    { "label": "阿里云 (mirrors.aliyun.com)", "value": "aliyun" },
+                    { "label": "清华 TUNA", "value": "tsinghua" },
+                    { "label": "中科大 USTC", "value": "ustc" },
+                    { "label": "华为云", "value": "huawei" },
+                    { "label": "腾讯云", "value": "tencent" },
+                    { "label": "上海交大", "value": "sjtug" },
+                    { "label": "直连 PyPI 官方", "value": "official" },
+                    { "label": "自定义", "value": "custom" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_pip_mirror_custom",
+                "label": "自定义 pip 镜像地址",
+                "initValue": "",
+                "rules": [
+                    { "required": false, "message": "请输入有效的 pip 镜像 URL" }
+                ]
+            },
+            {
+                "type": "select",
+                "field": "wizard_github_proxy",
+                "label": "GitHub 代理",
+                "initValue": "ghproxy",
+                "options": [
+                    { "label": "ghproxy.com", "value": "ghproxy" },
+                    { "label": "gh.api.coderkeeper.com", "value": "coderkeeper" },
+                    { "label": "gitclone.com", "value": "gitclone" },
+                    { "label": "gh.ddlc.top", "value": "ddlc" },
+                    { "label": "直连 GitHub", "value": "direct" },
+                    { "label": "自定义", "value": "custom" }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_github_proxy_custom",
+                "label": "自定义 GitHub 代理地址",
+                "initValue": "",
+                "rules": [
+                    { "required": false, "message": "请输入有效的代理 URL" }
+                ]
+            }
+        ]
+    }
+]

@@ -1,0 +1,45 @@
+#!/bin/bash
+# Hermes AI Agent - 卸载前准备
+# 用户选择已在 wizard/uninstall 中完成
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "===== 开始卸载 ====="
+log_msg "正在停止服务..."
+
+# 停止服务
+if [ -f "${TRIM_PKGVAR}/app.pid" ]; then
+    PID=$(head -n 1 "${TRIM_PKGVAR}/app.pid" | tr -d '[:space:]')
+    if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
+        log_msg "停止运行中的服务 (PID: ${PID})..."
+        kill -TERM "${PID}" 2>/dev/null
+        sleep 3
+        kill -0 "${PID}" 2>/dev/null && kill -KILL "${PID}" 2>/dev/null || true
+    fi
+    rm -f "${TRIM_PKGVAR}/app.pid"
+fi
+
+# 记录用户选择
+KEEP_DATA="${wizard_keep_data:-true}"
+log_msg "用户选择: KEEP_DATA=${KEEP_DATA}"
+
+# 卸载说明
+cat > "${TRIM_TEMP_LOGFILE}" << EOF
+┌─────────────────────────────────────────────────┐
+│ Hermes AI Agent 卸载                            │
+├─────────────────────────────────────────────────┤
+│  数据目录: ${TRIM_PKGVAR}
+│  配置文件目录: ${TRIM_PKGETC}
+│
+│  ● 应用数据保留: $(if [ "${KEEP_DATA}" = "true" ]; then echo "保留 ✓"; else echo "删除 ✗"; fi)
+│
+│  $(if [ "${KEEP_DATA}" = "true" ]; then echo "数据已保留，重装后自动恢复"; else echo "所有数据将被清理"; fi)
+└─────────────────────────────────────────────────┘
+EOF
+
+log_msg "卸载准备完成"
+exit 0

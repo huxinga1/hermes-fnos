@@ -1,0 +1,14 @@
+#!/bin/bash
+# Hermes AI Agent - 配置变更前
+# 用户在应用设置页面修改配置前触发
+
+# 备份当前配置
+if [ -f "${TRIM_PKGETC}/env.conf" ]; then
+    cp "${TRIM_PKGETC}/env.conf" "${TRIM_PKGVAR}/env.conf.preconfig"
+fi
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${TRIM_PKGVAR}/config.log"
+}
+log_msg "配置变更前处理完成"
+exit 0

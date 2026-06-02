@@ -1,0 +1,7 @@
+{
+    "defaults": {
+        "run-as": "package"
+    },
+    "username": "com.nousresearch.hermes",
+    "groupname": "com.nousresearch.hermes"
+}

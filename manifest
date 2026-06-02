@@ -1,0 +1,15 @@
+appname         = com.nousresearch.hermes
+version               = 0.1.8
+display_name    = Hermes AI Agent
+platform        = x86
+maintainer      = Nous Research
+maintainer_url  = https://github.com/NousResearch
+distributor     = fnOS Community
+distributor_url = https://github.com/NousResearch/hermes-agent
+desktop_uidir   = ui
+desktop_applaunchname = com.nousresearch.hermes.Application
+service_port    = 8787
+checkport       = true
+desc            = Hermes AI Agent with WebUI — 自进化 AI 智能体，支持 Web 界面操作与远程访问。原生 fnOS 应用。
+source          = thirdparty
+install_dep_apps = python312

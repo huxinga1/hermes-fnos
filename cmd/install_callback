@@ -1,0 +1,446 @@
+#!/bin/bash
+# Hermes AI Agent - 安装后回调
+# 创建虚拟环境、下载 WebUI、安装 Hermes Agent
+
+set -o pipefail
+
+LOG_FILE="${TRIM_PKGVAR}/install.log"
+PYTHON312="/var/apps/python312/target/bin/python3"
+ETC_DIR="${TRIM_PKGETC}"
+
+# ============================================================================
+# 自定义数据目录（来自 wizard/install 的 wizard_data_dir 字段）
+# 如果用户指定了自定义路径，将核心数据（venv, webui, workspace）放到该路径下
+# ============================================================================
+CUSTOM_DATA_DIR="${wizard_data_dir}"
+if [ -n "${CUSTOM_DATA_DIR}" ]; then
+    export VENV_DIR="${CUSTOM_DATA_DIR}/venv"
+    export WEBUI_DIR="${CUSTOM_DATA_DIR}/hermes-webui"
+    export WORKSPACE_DIR="${CUSTOM_DATA_DIR}/workspace"
+    mkdir -p "${CUSTOM_DATA_DIR}" "${WORKSPACE_DIR}"
+    echo "${CUSTOM_DATA_DIR}" > "${TRIM_PKGETC}/custom_data_dir.conf"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 使用自定义数据目录: ${CUSTOM_DATA_DIR}" >> "${LOG_FILE}"
+else
+    export VENV_DIR="${TRIM_PKGVAR}/venv"
+    export WEBUI_DIR="${TRIM_PKGVAR}/hermes-webui"
+    export WORKSPACE_DIR="${TRIM_PKGVAR}/workspace"
+    rm -f "${TRIM_PKGETC}/custom_data_dir.conf"
+fi
+
+# ============================================================================
+# 配置：镜像源和代理链
+# ============================================================================
+
+# pip 镜像源（按优先级从高到低）
+PIP_MIRRORS=(
+    "https://mirrors.aliyun.com/pypi/simple/"
+    "https://pypi.tuna.tsinghua.edu.cn/simple/"
+    "https://mirrors.ustc.edu.cn/pypi/web/simple/"
+    "https://repo.huaweicloud.com/repository/pypi/simple/"
+    "https://mirrors.cloud.tencent.com/pypi/simple/"
+    "https://pypi.mirrors.sjtug.sjtu.edu.cn/simple/"
+    "https://pypi.org/simple/"
+)
+
+PIP_MIRROR_NAMES=(
+    "阿里云 mirrors.aliyun.com"
+    "清华 TUNA"
+    "中科大 USTC"
+    "华为云"
+    "腾讯云"
+    "上海交大 SJTUG"
+    "PyPI 官方"
+)
+
+# GitHub 代理（按优先级从高到低）
+GH_PROXIES=(
+    "https://ghproxy.com/"
+    "https://gh.api.coderkeeper.com/"
+    "https://gitclone.com/"
+    "https://gh.ddlc.top/"
+    ""
+)
+
+GH_PROXY_NAMES=(
+    "ghproxy.com"
+    "coderkeeper"
+    "gitclone.com"
+    "gh.ddlc.top"
+    "直连 GitHub"
+)
+
+# ============================================================================
+# 辅助函数
+# ============================================================================
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 错误: $1" | tee -a "${LOG_FILE}"
+    echo "$1" > "${TRIM_TEMP_LOGFILE}"
+    exit 1
+}
+
+# 测试 pip 镜像源连通性
+test_pip_mirror() {
+    local mirror_url="$1"
+    local host
+    host=$(echo "${mirror_url}" | awk -F'/' '{print $3}')
+    # 快速 HTTP HEAD 请求测试连通性
+    curl -sfI --connect-timeout 5 --max-time 10 "${mirror_url}" >/dev/null 2>&1
+    return $?
+}
+
+# 用指定镜像 pip install
+pip_install_with_mirror() {
+    local mirror_url="$1"
+    shift
+    "${VENV_DIR}/bin/pip" install \
+        -i "${mirror_url}" \
+        --trusted-host "$(echo "${mirror_url}" | awk -F'/' '{print $3}')" \
+        --timeout 120 \
+        --retries 2 \
+        "$@" 2>&1 | tee -a "${LOG_FILE}"
+    return "${PIPESTATUS[0]}"
+}
+
+# 带代理链下载
+download_with_proxy() {
+    local download_url="$1"
+    local output_file="$2"
+    local proxy_url="$3"
+
+    if [ -n "${proxy_url}" ]; then
+        local full_url="${proxy_url}${download_url}"
+    else
+        local full_url="${download_url}"
+    fi
+
+    log_msg "  尝试下载: ${full_url}"
+    curl -sfL --connect-timeout 15 --max-time 120 \
+        -o "${output_file}" \
+        "${full_url}" 2>&1 | tee -a "${LOG_FILE}"
+    return "${PIPESTATUS[0]}"
+}
+
+# ============================================================================
+# 步骤 1: 创建虚拟环境
+# ============================================================================
+
+setup_venv() {
+    log_msg "===== 步骤 1/5: 创建 Python 虚拟环境 ====="
+
+    if [ -f "${VENV_DIR}/bin/python3" ]; then
+        log_msg "虚拟环境已存在，跳过创建"
+        return 0
+    fi
+
+    mkdir -p "${TRIM_PKGVAR}"
+
+    "${PYTHON312}" -m venv "${VENV_DIR}" 2>&1 | tee -a "${LOG_FILE}"
+    if [ $? -ne 0 ]; then
+        error_exit "创建虚拟环境失败"
+    fi
+
+    # 升级 pip
+    "${VENV_DIR}/bin/pip" install --upgrade pip --timeout 60 2>&1 | tee -a "${LOG_FILE}"
+
+    log_msg "虚拟环境创建成功"
+}
+
+# ============================================================================
+# 步骤 2: Git 克隆 Hermes WebUI（启用内置更新机制）
+# ============================================================================
+
+download_webui() {
+    log_msg "===== 步骤 2/5: 克隆 Hermes WebUI (Git) ====="
+
+    if [ -f "${WEBUI_DIR}/server.py" ]; then
+        log_msg "WebUI 已存在，跳过下载"
+
+        # 确保 remote 指向原始 URL（以便内置更新可用）
+        if [ -d "${WEBUI_DIR}/.git" ]; then
+            cd "${WEBUI_DIR}"
+            local current_remote
+            current_remote=$(git remote get-url origin 2>/dev/null)
+            if echo "${current_remote}" | grep -qi "ghproxy\|coderkeeper\|gitclone"; then
+                log_msg "修复 remote URL: ${current_remote} → https://github.com/nesquena/hermes-webui.git"
+                git remote set-url origin "https://github.com/nesquena/hermes-webui.git"
+            fi
+        fi
+        return 0
+    fi
+
+    # 检查 git
+    if ! command -v git &>/dev/null; then
+        log_msg "git 未安装，尝试安装..."
+        apt-get install -y git 2>&1 | tee -a "${LOG_FILE}" || error_exit "无法安装 git"
+    fi
+
+    local clone_url="https://github.com/nesquena/hermes-webui.git"
+    local user_proxy=""
+
+    # 确定用户指定的代理
+    if [ -n "${wizard_github_proxy_custom}" ]; then
+        user_proxy="${wizard_github_proxy_custom}"
+    else
+        case "${wizard_github_proxy:-ghproxy}" in
+            ghproxy)      user_proxy="https://ghproxy.com/" ;;
+            coderkeeper)  user_proxy="https://gh.api.coderkeeper.com/" ;;
+            gitclone)     user_proxy="https://gitclone.com/" ;;
+            ddlc)         user_proxy="https://gh.ddlc.top/" ;;
+            direct)       user_proxy="" ;;
+            custom)       user_proxy="${wizard_github_proxy_custom}" ;;
+        esac
+    fi
+
+    local git_ok=1
+
+    # 先试用户指定的代理
+    if [ -n "${user_proxy}" ]; then
+        local full_url="${user_proxy}${clone_url}"
+        log_msg "使用用户指定的代理克隆: ${full_url}"
+        rm -rf "${WEBUI_DIR}"
+        git clone "${full_url}" "${WEBUI_DIR}" 2>&1 | tee -a "${LOG_FILE}"
+        if [ $? -eq 0 ] && [ -f "${WEBUI_DIR}/server.py" ]; then
+            log_msg "  ✓ git clone 成功 (用户代理)"
+            git_ok=0
+        fi
+    fi
+
+    # 用户代理失败，走自动代理链
+    if [ "${git_ok}" -ne 0 ]; then
+        log_msg "切换自动代理链..."
+        for i in "${!GH_PROXIES[@]}"; do
+            local proxy="${GH_PROXIES[$i]}"
+            local name="${GH_PROXY_NAMES[$i]}"
+
+            rm -rf "${WEBUI_DIR}"
+
+            if [ -n "${proxy}" ]; then
+                local full_url="${proxy}${clone_url}"
+            else
+                local full_url="${clone_url}"
+            fi
+
+            log_msg "  尝试 git clone via [${name}]: ${full_url}"
+            git clone "${full_url}" "${WEBUI_DIR}" 2>&1 | tee -a "${LOG_FILE}"
+
+            if [ $? -eq 0 ] && [ -f "${WEBUI_DIR}/server.py" ]; then
+                log_msg "  ✓ ${name} git clone 成功"
+                git_ok=0
+                break
+            fi
+            log_msg "  ✗ ${name} git clone 失败"
+        done
+    fi
+
+    if [ "${git_ok}" -ne 0 ]; then
+        error_exit "所有代理均无法 git clone WebUI。请检查网络连接，或在安装向导中配置可用的代理地址。"
+    fi
+
+    # 恢复 remote 为原始 GitHub URL（内置更新依赖它）
+    cd "${WEBUI_DIR}"
+    git remote set-url origin "https://github.com/nesquena/hermes-webui.git"
+    log_msg "git remote 已恢复为原始 URL"
+
+    # 记录当前版本
+    local clone_version
+    clone_version=$(git describe --tags 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    echo "${clone_version}" > "${WEBUI_DIR}/VERSION"
+    log_msg "WebUI 版本: ${clone_version}"
+
+    log_msg "WebUI Git 克隆完成"
+    cd "${TRIM_PKGVAR}"
+}
+
+# ============================================================================
+# 步骤 3: 安装 Python 依赖（代理与镜像链）
+# ============================================================================
+
+install_python_deps() {
+    log_msg "===== 步骤 3/5: 安装基础 Python 依赖 ====="
+
+    # 先升级 pip
+    "${VENV_DIR}/bin/pip" install --upgrade pip setuptools wheel --timeout 60 2>&1 | tee -a "${LOG_FILE}"
+
+    log_msg "===== 步骤 4/5: 安装 Hermes Agent ====="
+
+    # 确定用户选择的镜像源
+    local user_mirror=""
+    case "${wizard_pip_mirror:-aliyun}" in
+        aliyun)    user_mirror="https://mirrors.aliyun.com/pypi/simple/" ;;
+        tsinghua)  user_mirror="https://pypi.tuna.tsinghua.edu.cn/simple/" ;;
+        ustc)      user_mirror="https://mirrors.ustc.edu.cn/pypi/web/simple/" ;;
+        huawei)    user_mirror="https://repo.huaweicloud.com/repository/pypi/simple/" ;;
+        tencent)   user_mirror="https://mirrors.cloud.tencent.com/pypi/simple/" ;;
+        sjtug)     user_mirror="https://pypi.mirrors.sjtug.sjtu.edu.cn/simple/" ;;
+        official)  user_mirror="https://pypi.org/simple/" ;;
+        custom)    user_mirror="${wizard_pip_mirror_custom}" ;;
+    esac
+
+    # 安装 hermes-agent
+    local agent_installed=1
+    if [ -n "${user_mirror}" ]; then
+        log_msg "尝试用户指定的镜像源: ${user_mirror}"
+        if pip_install_with_mirror "${user_mirror}" "hermes-agent"; then
+            agent_installed=0
+        fi
+    fi
+
+    # 用户镜像失败，走自动镜像链
+    if [ "${agent_installed}" -ne 0 ]; then
+        log_msg "用户指定镜像失败，自动切换镜像链..."
+        for i in "${!PIP_MIRRORS[@]}"; do
+            local mirror="${PIP_MIRRORS[$i]}"
+            local name="${PIP_MIRROR_NAMES[$i]}"
+
+            log_msg "  尝试镜像 [${name}]: ${mirror}"
+            if pip_install_with_mirror "${mirror}" "hermes-agent"; then
+                log_msg "  ✓ ${name} 安装 hermes-agent 成功"
+                agent_installed=0
+                break
+            fi
+            log_msg "  ✗ ${name} 安装失败"
+        done
+    fi
+
+    if [ "${agent_installed}" -ne 0 ]; then
+        error_exit "所有 pip 镜像均无法安装 hermes-agent。请检查网络连接，或在安装向导中选择可用的镜像源。"
+    fi
+
+    log_msg "===== 步骤 5/5: 安装 WebUI 依赖 ====="
+    if [ -f "${WEBUI_DIR}/requirements.txt" ]; then
+        local webui_deps_installed=1
+        if [ -n "${user_mirror}" ]; then
+            if pip_install_with_mirror "${user_mirror}" "-r" "${WEBUI_DIR}/requirements.txt"; then
+                webui_deps_installed=0
+            fi
+        fi
+
+        if [ "${webui_deps_installed}" -ne 0 ]; then
+            for i in "${!PIP_MIRRORS[@]}"; do
+                local mirror="${PIP_MIRRORS[$i]}"
+                local name="${PIP_MIRROR_NAMES[$i]}"
+                log_msg "  尝试镜像 [${name}] 安装 WebUI 依赖..."
+                if pip_install_with_mirror "${mirror}" "-r" "${WEBUI_DIR}/requirements.txt"; then
+                    log_msg "  ✓ WebUI 依赖安装成功"
+                    webui_deps_installed=0
+                    break
+                fi
+            done
+        fi
+
+        if [ "${webui_deps_installed}" -ne 0 ]; then
+            log_msg "警告: WebUI 部分依赖安装失败，应用可能无法正常运行"
+        fi
+    else
+        log_msg "未发现 requirements.txt，跳过"
+    fi
+}
+
+# ============================================================================
+# 保存配置
+# ============================================================================
+
+save_config() {
+    log_msg "保存网络配置..."
+
+    mkdir -p "${ETC_DIR}"
+
+    cat > "${ETC_DIR}/env.conf" << EOF
+# Hermes 网络配置
+# 由安装向导生成，可在 WebUI 设置中修改
+
+# pip 镜像源
+PIP_MIRROR="${wizard_pip_mirror:-aliyun}"
+PIP_MIRROR_CUSTOM="${wizard_pip_mirror_custom}"
+
+# GitHub 代理
+GITHUB_PROXY="${wizard_github_proxy:-ghproxy}"
+GITHUB_PROXY_CUSTOM="${wizard_github_proxy_custom}"
+
+# 自定义数据目录（若留空则使用系统默认 TRIM_PKGVAR）
+CUSTOM_DATA_DIR="${CUSTOM_DATA_DIR}"
+EOF
+
+    log_msg "配置已保存到 ${ETC_DIR}/env.conf"
+}
+
+# ============================================================================
+# 修复文件权限
+# ============================================================================
+
+fix_permissions() {
+    log_msg "修复文件权限..."
+
+    # install_callback 以 root 运行，需要将文件所有权交给应用用户
+    if command -v chown &>/dev/null && [ -n "${TRIM_USERNAME}" ] && [ -n "${TRIM_GROUPNAME}" ]; then
+        chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${TRIM_PKGVAR}" 2>/dev/null || true
+        chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${TRIM_PKGETC}" 2>/dev/null || true
+        if [ -n "${CUSTOM_DATA_DIR}" ]; then
+            chown -R "${TRIM_USERNAME}:${TRIM_GROUPNAME}" "${CUSTOM_DATA_DIR}" 2>/dev/null || true
+        fi
+        log_msg "文件所有权已设置为 ${TRIM_USERNAME}:${TRIM_GROUPNAME}"
+    fi
+
+    # 确保 venv 可执行
+    if [ -f "${VENV_DIR}/bin/python3" ]; then
+        chmod -R 755 "${VENV_DIR}/bin/" 2>/dev/null || true
+        log_msg "venv 执行权限已修复"
+    fi
+}
+
+# ============================================================================
+# 预创建工作区目录
+# ============================================================================
+
+setup_workspace() {
+    log_msg "创建工作区目录..."
+
+    # WebUI 需要写 workspace 目录，预创建并授权
+    mkdir -p "${WORKSPACE_DIR}"
+    log_msg "workspace 目录已创建: ${WORKSPACE_DIR}"
+
+    # 同时创建 webui 状态目录
+    local webui_state="${TRIM_PKGVAR}/webui"
+    mkdir -p "${webui_state}" "${webui_state}/sessions"
+    log_msg "webui state 目录已创建: ${webui_state}"
+}
+
+# ============================================================================
+# 主流程
+# ============================================================================
+
+main() {
+    log_msg "=========================================="
+    log_msg "Hermes AI Agent 安装开始"
+    log_msg "AppName: ${TRIM_APPNAME}"
+    log_msg "安装目录: ${TRIM_APPDEST}"
+    log_msg "数据目录: ${TRIM_PKGVAR}"
+    if [ -n "${CUSTOM_DATA_DIR}" ]; then
+        log_msg "自定义数据存放: ${CUSTOM_DATA_DIR}"
+    fi
+    log_msg "=========================================="
+
+    mkdir -p "${TRIM_PKGVAR}" "${ETC_DIR}"
+
+    setup_venv
+    download_webui
+    install_python_deps
+    setup_workspace
+    save_config
+    fix_permissions
+
+    log_msg "=========================================="
+    log_msg "Hermes AI Agent 安装完成！"
+    log_msg "请前往 fnOS 应用中心启动应用"
+    log_msg "启动后可通过 http://NAS_IP:${TRIM_SERVICE_PORT:-8787} 访问"
+    log_msg "=========================================="
+
+    exit 0
+}
+
+main

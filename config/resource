@@ -1,0 +1,22 @@
+{
+    "data-share": {
+        "shares": [
+            {
+                "name": "com.nousresearch.hermes",
+                "permission": {
+                    "rw": [
+                        "com.nousresearch.hermes"
+                    ]
+                }
+            },
+            {
+                "name": "com.nousresearch.hermes/data",
+                "permission": {
+                    "rw": [
+                        "com.nousresearch.hermes"
+                    ]
+                }
+            }
+        ]
+    }
+}

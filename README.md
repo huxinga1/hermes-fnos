@@ -107,7 +107,7 @@ chmod +x build-hermes-fpk.sh
 
 | 项目 | 用途 | 安装方式 |
 |------|------|----------|
-| [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | AI 智能体核心（pip 包: `hermes-agent`） | `pip install hermes-agent` |
+| [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | AI 智能体核心（pip 包: `hermes-agent`） | `pip install hermes-agent==0.16.0` |
 | [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui) | Web 管理界面（Flask 应用） | `git clone` → `pip install -r requirements.txt` |
 
 本仓库仅负责编排上述两个项目的 fnOS 集成部署。
@@ -116,8 +116,8 @@ chmod +x build-hermes-fpk.sh
 
 | 组件 | 版本/规格 |
 |------|-----------|
-| **Hermes Agent** | 最新 PyPI (install 时动态获取) |
-| **Hermes WebUI** | 最新 GitHub release (install 时动态获取) |
+| **Hermes Agent** | 最新 PyPI v0.16.0 (install 时动态获取) |
+| **Hermes WebUI** | 最新 GitHub release v0.51.307 (install 时动态获取) |
 | **fnOS Python** | 3.12（系统预装） |
 | **fnpack** | v1.2.0（fnOS 打包工具） |
 
